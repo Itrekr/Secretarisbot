@@ -156,8 +156,8 @@ if __name__ == '__main__':
     application.add_handler(read_entry_handler)
     
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(send_daily_reminders, CronTrigger(hour=7, minute=11), args=[application])
-    scheduler.add_job(remind_to_write, CronTrigger(hour=7, minute=2), args=[application])
+    scheduler.add_job(send_daily_reminders, CronTrigger(hour=9, minute=1), args=[application])
+    scheduler.add_job(remind_to_write, CronTrigger(hour=20, minute=55), args=[application])
     scheduler.start()
     
     application.run_polling()
