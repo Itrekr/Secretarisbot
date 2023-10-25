@@ -31,6 +31,7 @@ async def send_daily_reminders(context: ContextTypes.DEFAULT_TYPE):
 
         # Get today's date
         today = datetime.date.today()
+        current_year = today.strftime('%Y')
         current_month_day = today.strftime('%m-%d')
         print(f"Today's date: {today}")
 
@@ -42,8 +43,12 @@ async def send_daily_reminders(context: ContextTypes.DEFAULT_TYPE):
         files = os.listdir(journal_folder)
         print(f"Files in journal folder: {files}")
 
-        # Filter the files for journal entries matching today's month and day
-        found_entries = [file for file in files if file.endswith('.org') and file[5:10] == current_month_day]
+        # Filter the files for journal entries matching today's month and day, excluding the current year
+        found_entries = [
+            file[:-4]  # remove the '.org' extension
+            for file in files
+            if file.endswith('.org') and file[5:10] == current_month_day and file[:4] != current_year
+        ]
         print(f"Found entries: {found_entries}")
 
         # Send a message if matching entries are found
