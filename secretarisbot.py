@@ -22,7 +22,7 @@ config.read('config.ini')
 TELEGRAM_BOT_TOKEN = config['Telegram']['BotToken']
 AUTHORIZED_USER_ID = config['Telegram']['AuthorizedUserId']
 
-journal_folder = "/var/www/html/data/Oscar/files/Notes/Journal/"
+journal_file_path = "/var/www/html/data/Oscar/files/Notes/Journal/journal.org"
 
 async def send_daily_reminders(context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -76,7 +76,7 @@ async def read_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if context.args:
             date_str = context.args[0]
-            file_path = f"/var/www/html/data/Oscar/files/Notes/Journal/{date_str}.org"
+            file_path = f"/var/www/html/data/Oscar/files/Notes/Journal/journal.org"
 
             if os.path.exists(file_path):
                 with open(file_path, 'r') as f:
@@ -100,13 +100,13 @@ async def remind_to_write(context: ContextTypes.DEFAULT_TYPE):
     try:
         # Print the current date and time
         print(f"Running remind_to_write at {datetime.datetime.now()}")
-        
+
         # Get today's date
         today = datetime.date.today()
         print(f"Today's date: {today}")
 
         # Build the file path
-        file_path = f"/var/www/html/data/Oscar/files/Notes/Journal/{today}.org"
+        file_path = f"/var/www/html/data/Oscar/files/Notes/Journal/journal.org"
         print(f"File path: {file_path}")
 
         # Check if the file exists
@@ -124,6 +124,71 @@ async def remind_to_write(context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Failed to send reminder: {e}")
         print(f"Exception: {e}")
 
+def insert_journal_entry(file_path, message):
+    today = datetime.date.today()
+    current_year = today.strftime('%Y')
+    current_week = today.strftime('%Y-W%V')
+    current_date = today.strftime('%Y-%m-%d')
+    current_day = today.strftime('%A')
+    unique_id = str(uuid4())
+
+    # Read the existing journal file content
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as f:
+            content = f.readlines()
+    else:
+        content = []
+
+    found_year = found_week = found_date = found_properties = False
+    new_content = []
+    last_line_empty = False
+
+    for line in content:
+        if line.strip() == f"* {current_year}":
+            found_year = True
+        elif found_year and line.strip() == f"** {current_week}":
+            found_week = True
+        elif found_week and line.strip() == f"*** {current_date} {current_day}":
+            found_date = True
+        elif found_date and ":PROPERTIES:" in line:
+            found_properties = True
+        elif found_properties and ":END:" in line:
+            found_properties = False
+            if not found_date:
+                new_content.append(line)
+                new_content.append('\n')
+                new_content.append(message + '\n')
+                found_date = True
+                continue
+
+        new_content.append(line)
+        last_line_empty = (line.strip() == "")
+
+    if not found_year:
+        if not last_line_empty:
+            new_content.append('\n')
+        new_content.append(f"* {current_year}\n")
+    if not found_week:
+        if not last_line_empty:
+            new_content.append('\n')
+        new_content.append(f"** {current_week}\n")
+    if not found_date:
+        if not last_line_empty:
+            new_content.append('\n')
+        new_content.append(f"*** {current_date} {current_day}\n")
+        new_content.append(":PROPERTIES:\n")
+        new_content.append(f":ID:       {unique_id}\n")
+        new_content.append(":END:\n")
+        new_content.append('\n')
+        new_content.append(message + '\n')
+    else:
+        if not last_line_empty:
+            new_content.append('\n')
+        new_content.append(message + '\n')
+
+    with open(file_path, 'w') as f:
+        f.writelines(new_content)
+
 # Function to handle incoming text messages and create/update journal entries
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -131,21 +196,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         update.message.reply_text('Unauthorized.')
         return
 
-    today = datetime.date.today()
-    file_path = f"/var/www/html/data/Oscar/files/Notes/Journal/{today}.org"
-
     message = update.message.text
 
-    if not os.path.exists(file_path):
-        with open(file_path, 'w') as f:
-            f.write(":PROPERTIES:\n")
-            f.write(f":ID: {uuid4()}\n")
-            f.write(":END:\n")
-            f.write(f"#+title: {today}\n\n")
-            f.write(message)
-    else:
-        with open(file_path, 'a') as f:
-            f.write('\n' + message)
+    insert_journal_entry(journal_file_path, message)
 
     os.system("sudo -u www-data php /var/www/html/occ files:scan --path='/Oscar/files/Notes/Journal/'")
 
@@ -155,14 +208,14 @@ if __name__ == '__main__':
     start_handler = CommandHandler('start', read_entry)
     read_entry_handler = CommandHandler('r', read_entry)
     message_handler = MessageHandler(Text() & ~Command(), handle_text)
-    
+
     application.add_handler(start_handler)
     application.add_handler(message_handler)
     application.add_handler(read_entry_handler)
-    
+
     scheduler = AsyncIOScheduler()
     scheduler.add_job(send_daily_reminders, CronTrigger(hour=9, minute=1), args=[application])
-    scheduler.add_job(remind_to_write, CronTrigger(hour=20, minute=55), args=[application])
+    # scheduler.add_job(remind_to_write, CronTrigger(hour=20, minute=55), args=[application])
     scheduler.start()
-    
+
     application.run_polling()
